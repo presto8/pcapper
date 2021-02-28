@@ -1,4 +1,4 @@
-# pcapper
+# Overview
 
 pcapper edits pcapng files to remove any information that the user does not
 want to share with others. One of its intended purposes is for the submission
@@ -9,8 +9,8 @@ make it harder to identify the issue. By isolating the bare minimum issue
 necessary to reproduce the bug (by removing unrelated information), it speeds
 up the debugging process.
 
-Additional, companies working on pre-release products may wish to remove as
-much identiying information as possible from the capture data.
+Users working on pre-release products can use pcapper to remove as much
+identiying information as possible from the capture data.
 
 # Usage
 
