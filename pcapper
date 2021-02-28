@@ -1,0 +1,198 @@
+#!/usr/bin/env python
+
+# Copyright 2021 by Preston Hunt
+
+from __future__ import annotations
+
+import argparse
+import sys
+import struct
+from struct import pack, unpack
+from typing import Union, BinaryIO
+
+
+class Fail(Exception):
+    pass
+
+
+class Block:
+    type: bytes = b''
+    total_length: int = 0
+    body: bytes = b''
+
+    def __init__(self):
+        self._offset = 0
+
+    def __repr__(self):
+        return f"<Block type={self.type} total_length={self.total_length} body={self.body}>"
+
+    @staticmethod
+    def from_stream(fd: BinaryIO) -> Union[None, Block]:
+        self = Block()
+        try:
+            self.type, self.total_length = unpack('<4sL', fd.read(8))
+        except struct.error:
+            return None
+        body_len = self.total_length - 4 - 4 - 4
+        self.body = unpack(f'{body_len}s', fd.read(body_len))[0]
+        total_length2 = unpack('<L', fd.read(4))[0]
+        if self.total_length != total_length2:
+            raise Fail("malformed, total_length mismatch")
+        return self
+
+    def to_stream(self, fd):
+        body = self._body()
+        total_length = 4 + 4 + 4 + len(body)  # calculate length again in case it was changed
+        fd.write(pack('<4sL', self.type, total_length))
+        fd.write(pack(f'{len(body)}s', body))
+        fd.write(pack('<L', total_length))
+
+    @staticmethod
+    def parse_options(buf):
+        offset = 0
+        while offset < len(buf) and buf[offset] != 0:
+            option = Option.from_bytes(buf[offset:])
+            yield option
+            offset += option.size
+
+    def _body(self):
+        raise Exception("subclasses must implement _body")
+
+    def get_body(self, count=None):
+        offset = self._offset
+        count = count or len(self.body) - offset  # rest of the buffer
+        self._offset += count
+        return self.body[offset:offset + count]
+
+    def unpack_body(self, fmt):
+        result = unpack(fmt, self.get_body(struct.calcsize(fmt)))
+        if len(result) == 1:
+            result = result[0]
+        return result
+
+
+class SectionHeaderBlock(Block):
+    def __init__(self, block):
+        self.__dict__ = block.__dict__.copy()
+        self.magic = self.unpack_body('<L')
+        if self.magic != 0x1a2b3c4d:
+            raise Fail("malformed packet, invalid magic")
+        self.major_version, self.minor_version = self.unpack_body('<HH')
+        self.section_length = self.unpack_body('<q')
+        self.options = list(self.parse_options(self.get_body()))
+
+    def __repr__(self):
+        return f"<SectionHeaderBlock total_length={self.total_length} version={self.major_version}.{self.minor_version} section_length={self.section_length} options={self.options}"
+
+    def _body(self):
+        return pack('<L', self.magic) + pack('<HH', self.major_version, self.minor_version) + pack('<q', self.section_length) + b''.join([x.to_bytes() for x in self.options])
+
+
+class InterfaceDescriptionBlock(Block):
+    def __init__(self, block):
+        self.__dict__ = block.__dict__.copy()
+        self.link_type, self.reserved, self.snap_len = self.unpack_body('<HHL')
+
+    def __repr__(self):
+        return f"<InterfaceDescriptionBlock total_length={self.total_length} link_type={self.link_type} snap_len={self.snap_len}>"
+
+    def _body(self):
+        return pack('<HHL', self.link_type, self.reserved, self.snap_len)
+
+
+class EnhancedPacketBlock(Block):
+    def __init__(self, block):
+        self.__dict__ = block.__dict__.copy()
+        self._original_body = self.body
+        self.interface_id, self.timestamp, self.captured_packet_length, self.original_packet_length = self.unpack_body('<LQLL')
+        self.packet_data = self.unpack_body(f'{self.captured_packet_length}s')
+        self._padding = self.unpack_body(f'{self.captured_packet_length % 4}s')
+
+    def __repr__(self):
+        return f"<EnhancedPacketBlock interface_id={self.interface_id} timestamp={self.timestamp} captured_packet_length={self.captured_packet_length} original_packet_length={self.original_packet_length} packet_data={self.packet_data}>"
+
+    def _body(self) -> bytes:
+        return self._original_body
+
+    def replace(self, from_bytes, to_bytes) -> EnhancedPacketBlock:
+        self._original_body = self._original_body.replace(from_bytes, to_bytes)
+        return self
+
+
+class Option:
+    @staticmethod
+    def from_bytes(buf):
+        self = Option()
+        self._bytes = buf
+        self.type, self.length = unpack('<HH', buf[:4])
+        self.value = unpack(f'{self.length}s', buf[4:4 + self.length])[0]
+        self.padding = unpack(f'{self.length % 4}s', buf[4 + self.length:4 + self.length + self.length % 4])[0]
+        return self
+
+    def to_bytes(self):
+        return self._bytes
+
+    def __repr__(self):
+        return f"<Option type={self.type} length={self.length} value={self.value}>"
+
+    @property
+    def size(self):
+        return 2 + 2 + self.length + self.length % 4
+
+
+blocks = {
+    b'\n\r\r\n': SectionHeaderBlock,
+    bytes.fromhex('01000000'): InterfaceDescriptionBlock,
+    bytes.fromhex('06000000'): EnhancedPacketBlock,
+}
+
+
+def read_next_block(fd_in: BinaryIO) -> Union[None, Block]:
+    if (unknown := Block.from_stream(fd_in)) is None:
+        return None
+
+    block_factory = blocks[unknown.type]
+    block = block_factory(unknown)
+
+    if ARGS.anon and isinstance(block, SectionHeaderBlock):
+        block.options = []
+    if ARGS.replace and isinstance(block, EnhancedPacketBlock):
+        replace = ARGS.replace.replace(':', '')
+        from_str, _, to_str = replace.partition('/')
+        block.replace(bytes.fromhex(from_str), bytes.fromhex(to_str))
+
+    return block
+
+
+def read_pcap(fdin):
+    while block := read_next_block(fdin):
+        yield block
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('filein', help='extract to exrtact')
+    parser.add_argument('fileout', help='extract to exrtact')
+    parser.add_argument('--verbose', default=False, action='store_true', help='show more detailed messages')
+    parser.add_argument('--anon', default=True, action='store_true', help='anonymize packet')
+    parser.add_argument('--replace', default=None, type=str, help='replace bytes aa:bb:cc/xx:yy:zz')
+    return parser.parse_args()
+
+
+def main():
+    fdin = open(ARGS.filein, 'rb')
+    fdout = open(ARGS.fileout, 'wb')
+    for block in read_pcap(fdin):
+        print(block)
+        block.to_stream(fdout)
+
+
+if __name__ == '__main__':
+    try:
+        ARGS = parse_args()
+        main()
+    except Fail as f:
+        print(*f.args, file=sys.stderr)
+        sys.exit(1)
+    except KeyboardInterrupt:
+        print("Ctrl+C")
