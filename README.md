@@ -1,3 +1,5 @@
+[![Python application](https://github.com/presto8/pcapper/actions/workflows/python-app.yml/badge.svg)](https://github.com/presto8/pcapper/actions/workflows/python-app.yml)
+
 # Overview
 
 pcapper edits pcapng files to remove any information that the user does not
