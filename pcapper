@@ -96,7 +96,7 @@ class InterfaceDescriptionBlock(Block):
     def __repr__(self):
         return f"<InterfaceDescriptionBlock total_length={self.total_length} link_type={self.link_type} snap_len={self.snap_len}>"
 
-    def _body(self):
+    def _body(self) -> bytes:
         return pack('<HHL', self.link_type, self.reserved, self.snap_len)
 
 
@@ -121,7 +121,7 @@ class EnhancedPacketBlock(Block):
 
 class Option:
     @staticmethod
-    def from_bytes(buf):
+    def from_bytes(buf: bytes) -> Option:
         self = Option()
         self._bytes = buf
         self.type, self.length = unpack('<HH', buf[:4])
@@ -150,17 +150,18 @@ blocks = {
 def read_next_block(fd_in: BinaryIO) -> Union[None, Block]:
     if (unknown := Block.from_stream(fd_in)) is None:
         return None
-
     block_factory = blocks[unknown.type]
     block = block_factory(unknown)
+    return block
 
+
+def anonymize_block(block):
     if ARGS.anon and isinstance(block, SectionHeaderBlock):
         block.options = []
     if ARGS.replace and isinstance(block, EnhancedPacketBlock):
         replace = ARGS.replace.replace(':', '')
         from_str, _, to_str = replace.partition('/')
         block.replace(bytes.fromhex(from_str), bytes.fromhex(to_str))
-
     return block
 
 
@@ -184,6 +185,7 @@ def main():
     fdout = open(ARGS.fileout, 'wb')
     for block in read_pcap(fdin):
         print(block)
+        anonymize_block(block)
         block.to_stream(fdout)
 
 
