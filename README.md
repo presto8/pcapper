@@ -1,8 +1,7 @@
 # Overview
 
 pcapper edits pcapng files to remove any information that the user does not
-want to share with others. One of its intended purposes is for the submission
-of minimal packet captures for bug reporting purposes.
+want to share with others.
 
 When reporting bugs, large and unwieldy pcapng files are undesirable as they
 make it harder to identify the issue. By isolating the bare minimum issue
@@ -33,7 +32,7 @@ To use the default anonymization options, provide the `--anon` flag:
 
 To replace MAC addresses and other binary octet sequences, use `--replace`:
 
-    pcapper --replace 11:22:33:44:55:66/00:00:00:00/11:22 in.pcapng out.pcapng
+    pcapper --replace 11:22:33:44:55:66/00:00:00:00:77:88 in.pcapng out.pcapng
 
 Currently, pcapper replaces any occurrence of the indicated octet sequences. In
 the future, pcapper may be extended to intelligently parse the packet data and
