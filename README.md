@@ -12,6 +12,15 @@ up the debugging process.
 Users working on pre-release products can use pcapper to remove as much
 identiying information as possible from the capture data.
 
+# Installation
+
+pcapper is intended to use as few Python dependencies as possible and should
+"just work".
+
+To install pcapper:
+
+    sudo install -m 755 -o root -g root pcapper /usr/local/bin
+
 # Usage
 
 By default, pcapper will just copy the input to the output:
