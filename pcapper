@@ -163,9 +163,10 @@ def anonymize_block(block):
     if ARGS.anon and isinstance(block, SectionHeaderBlock):
         block.options = []
     if ARGS.replace and isinstance(block, EnhancedPacketBlock):
-        replace = ARGS.replace.replace(':', '')
-        from_str, _, to_str = replace.partition('/')
-        block.replace(bytes.fromhex(from_str), bytes.fromhex(to_str))
+        for repl in ARGS.replace:
+            repl = repl[0].replace(':', '')
+            from_str, _, to_str = repl.partition('/')
+            block.replace(bytes.fromhex(from_str), bytes.fromhex(to_str))
     return block
 
 
@@ -180,7 +181,7 @@ def parse_args():
     parser.add_argument('fileout', help='extract to exrtact')
     parser.add_argument('--verbose', default=False, action='store_true', help='show more detailed messages')
     parser.add_argument('--anon', default=True, action='store_true', help='anonymize packet')
-    parser.add_argument('--replace', default=None, type=str, help='replace bytes aa:bb:cc/xx:yy:zz')
+    parser.add_argument('--replace', default=None, type=str, action='append', nargs='+', help='replace bytes aa:bb:cc/xx:yy:zz')
     return parser.parse_args()
 
 
