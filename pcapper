@@ -11,6 +11,10 @@ from struct import pack, unpack
 from typing import Union, BinaryIO
 
 
+def npad(buflen):
+    return (4 - buflen % 4) % 4
+
+
 class Fail(Exception):
     pass
 
@@ -106,7 +110,7 @@ class EnhancedPacketBlock(Block):
         self._original_body = self.body
         self.interface_id, self.timestamp, self.captured_packet_length, self.original_packet_length = self.unpack_body('<LQLL')
         self.packet_data = self.unpack_body(f'{self.captured_packet_length}s')
-        self._padding = self.unpack_body(f'{self.captured_packet_length % 4}s')
+        self._padding = self.unpack_body(f'{npad(self.captured_packet_length)}s')
 
     def __repr__(self):
         return f"<EnhancedPacketBlock interface_id={self.interface_id} timestamp={self.timestamp} captured_packet_length={self.captured_packet_length} original_packet_length={self.original_packet_length} packet_data={self.packet_data}>"
@@ -126,7 +130,7 @@ class Option:
         self._bytes = buf
         self.type, self.length = unpack('<HH', buf[:4])
         self.value = unpack(f'{self.length}s', buf[4:4 + self.length])[0]
-        self.padding = unpack(f'{self.length % 4}s', buf[4 + self.length:4 + self.length + self.length % 4])[0]
+        self.padding = unpack(f'{npad(self.length)}s', buf[4 + self.length:4 + self.length + npad(self.length)])[0]
         return self
 
     def to_bytes(self):
