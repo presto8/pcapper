@@ -141,7 +141,7 @@ class Option:
 
     @property
     def size(self):
-        return 2 + 2 + self.length + self.length % 4
+        return 2 + 2 + self.length + npad(self.length)
 
 
 blocks = {
